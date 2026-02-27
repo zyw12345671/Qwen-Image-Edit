@@ -1,0 +1,20 @@
+Cloudflare Pages 上传说明（重要）
+
+请将本目录内容完整上传到 Cloudflare Pages，确保包含以下文件：
+- index.html
+- favicon.svg
+- assets/*
+- _redirects
+
+其中 `_redirects` 必须存在，内容应为：
+/api/* https://qwenimageedit.zyw12345671.workers.dev/api/:splat 200
+
+排障建议：
+1) 部署后访问：
+   https://991qwen-image-edit.pages.dev/_redirects
+   如果返回 404，说明你上传流程没有把 `_redirects` 带上。
+2) 生成请求应优先走同源：
+   https://991qwen-image-edit.pages.dev/api/edit-image
+   再由 Pages 重写到 Worker。
+3) 不要直接在前端写死 workers.dev 域名，除非你确认该域名在你本地网络可达。
+4) 若本地网络无法访问 workers.dev，可考虑给 Worker 绑定你自己的域名后再改成环境变量 VITE_WORKER_BASE_URL。
