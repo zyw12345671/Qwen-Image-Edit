@@ -183,8 +183,8 @@ function App() {
             break;
           }
 
-          // 明确表明该地址未正确转发时，继续尝试下一个地址
-          if ([404, 405].includes(currentResponse.status)) {
+          // 明确表明该地址未正确转发或网关异常时，继续尝试下一个地址
+          if ([404, 405, 502, 503, 504].includes(currentResponse.status)) {
             continue;
           }
 
