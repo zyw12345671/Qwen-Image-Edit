@@ -1,0 +1,22 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# 将 Netlify 的 API 请求转发到已稳定可用的 Cloudflare Pages Functions
+[[redirects]]
+  from = "/api/edit-image"
+  to = "https://qwen-image-edit-cxt.pages.dev/api/edit-image"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/task-status"
+  to = "https://qwen-image-edit-cxt.pages.dev/api/task-status"
+  status = 200
+  force = true
+
+# SPA 路由回退
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
