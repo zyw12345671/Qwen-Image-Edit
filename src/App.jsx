@@ -222,9 +222,9 @@ function App() {
           }
 
           const taskData = await taskResp.json();
-          const status = taskData?.status || taskData?.task_status || taskData?.state;
+          const status = String(taskData?.status || taskData?.task_status || taskData?.state || '').toLowerCase();
 
-          if (['succeeded', 'SUCCEEDED', 'completed', 'success'].includes(status)) {
+          if (['succeeded', 'completed', 'success'].includes(status)) {
             const result = taskData?.output || taskData?.data || taskData?.result || taskData?.image;
             const imageCandidate =
               typeof result === 'string'

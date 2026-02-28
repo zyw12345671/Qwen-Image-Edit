@@ -20,21 +20,64 @@ export async function onRequestPost(context) {
       return jsonResponse({ error: '缺少 api_key' }, 400);
     }
 
-    const statusResponse = await fetch(`https://ai.gitee.com/api/v1/task/${taskId}`, {
+    // 先查新接口
+    const primary = await fetch(`https://ai.gitee.com/api/v1/task/${taskId}`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
     });
 
-    const statusData = await safeJson(statusResponse);
-    if (!statusResponse.ok) {
-      return jsonResponse(statusData || { error: '查询任务状态失败' }, statusResponse.status);
+    const primaryData = await safeJson(primary);
+    if (primary.ok && primaryData) {
+      return jsonResponse(normalizeTaskData(primaryData), 200);
     }
 
-    return jsonResponse(statusData, 200);
+    // 兜底：老接口
+    const fallback = await fetch(`https://ai.gitee.com/v1/async/tasks/${taskId}`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+
+    const fallbackData = await safeJson(fallback);
+    if (fallback.ok && fallbackData) {
+      return jsonResponse(normalizeTaskData(fallbackData), 200);
+    }
+
+    return jsonResponse(
+      {
+        error: '查询任务状态失败',
+        primary_status: primary.status,
+        fallback_status: fallback.status,
+        primary_data: primaryData,
+        fallback_data: fallbackData,
+      },
+      502,
+    );
   } catch (error) {
     return jsonResponse({ error: error?.message || 'task-status 处理失败' }, 500);
   }
+}
+
+function normalizeTaskData(raw) {
+  const statusRaw = raw?.status || raw?.task_status || raw?.state || raw?.taskState || raw?.data?.status;
+  const status = String(statusRaw || '').toLowerCase();
+
+  const output =
+    raw?.output ||
+    raw?.result ||
+    raw?.data?.output ||
+    raw?.data?.result ||
+    raw?.data ||
+    raw?.image;
+
+  const normalized = {
+    ...raw,
+    status,
+    output,
+  };
+
+  return normalized;
 }
 
 async function safeJson(response) {
