@@ -201,6 +201,7 @@ function App() {
 
         let imageUrl = null;
         let lastTaskStatus = 'unknown';
+        let lastTaskMessage = '';
         // 任务有时需要较长时间，轮询窗口拉长到约6分钟
         const maxPollAttempts = 180;
         const pollDelayMs = 2000;
@@ -225,8 +226,20 @@ function App() {
 
           const taskData = await taskResp.json();
           const status = String(taskData?.status || taskData?.task_status || taskData?.state || '').toLowerCase();
+          const taskMessage =
+            taskData?.error ||
+            taskData?.message ||
+            taskData?.msg ||
+            taskData?.detail ||
+            taskData?.output?.error ||
+            taskData?.output?.message ||
+            '';
+
           if (status) {
             lastTaskStatus = status;
+          }
+          if (taskMessage) {
+            lastTaskMessage = String(taskMessage);
           }
 
           if (['succeeded', 'completed', 'success'].includes(status)) {
@@ -259,13 +272,14 @@ function App() {
             }
           }
 
-          if (['failed', 'FAILED', 'error'].includes(status)) {
-            throw new Error(taskData?.error || taskData?.message || '任务执行失败');
+          if (['failed', 'error'].includes(status)) {
+            throw new Error(`任务失败（${status}）：${lastTaskMessage || '上游未返回详细错误'}`);
           }
         }
 
         if (!imageUrl) {
-          throw new Error(`任务处理中超时，请稍后再试（最后状态：${lastTaskStatus}）`);
+          const msg = lastTaskMessage ? `；详情：${lastTaskMessage}` : '';
+          throw new Error(`任务处理中超时，请稍后再试（最后状态：${lastTaskStatus}${msg}）`);
         }
 
         const imageResponse = await fetch(imageUrl);
