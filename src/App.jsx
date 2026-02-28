@@ -146,7 +146,16 @@ function App() {
       });
 
       const workerBaseUrl = (import.meta.env.VITE_WORKER_BASE_URL || '').trim().replace(/\/$/, '');
+      const cloudflarePagesApiBase = 'https://qwen-image-edit-cxt.pages.dev';
+      const isNetlifyHost = window.location.hostname.includes('netlify.app');
+
       const candidateApiUrls = ['/api/edit-image'];
+
+      // Netlify 某些情况下代理到外部会 504，这里加 Cloudflare 直连兜底
+      if (isNetlifyHost) {
+        candidateApiUrls.push(`${cloudflarePagesApiBase}/api/edit-image`);
+      }
+
       if (workerBaseUrl) {
         candidateApiUrls.push(`${workerBaseUrl}/api/edit-image`);
       }
@@ -209,7 +218,11 @@ function App() {
         for (let i = 0; i < maxPollAttempts; i++) {
           await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
 
-          const taskResp = await fetch('/api/task-status', {
+          const taskStatusApiUrl = isNetlifyHost
+            ? `${cloudflarePagesApiBase}/api/task-status`
+            : '/api/task-status';
+
+          const taskResp = await fetch(taskStatusApiUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
