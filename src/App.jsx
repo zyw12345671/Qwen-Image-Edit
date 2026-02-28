@@ -200,8 +200,10 @@ function App() {
         }
 
         let imageUrl = null;
-        const maxPollAttempts = 60;
-        const pollDelayMs = 1500;
+        let lastTaskStatus = 'unknown';
+        // 任务有时需要较长时间，轮询窗口拉长到约6分钟
+        const maxPollAttempts = 180;
+        const pollDelayMs = 2000;
 
         for (let i = 0; i < maxPollAttempts; i++) {
           await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
@@ -223,6 +225,9 @@ function App() {
 
           const taskData = await taskResp.json();
           const status = String(taskData?.status || taskData?.task_status || taskData?.state || '').toLowerCase();
+          if (status) {
+            lastTaskStatus = status;
+          }
 
           if (['succeeded', 'completed', 'success'].includes(status)) {
             const result = taskData?.output || taskData?.data || taskData?.result || taskData?.image;
@@ -260,7 +265,7 @@ function App() {
         }
 
         if (!imageUrl) {
-          throw new Error('任务处理中超时，请稍后再试');
+          throw new Error(`任务处理中超时，请稍后再试（最后状态：${lastTaskStatus}）`);
         }
 
         const imageResponse = await fetch(imageUrl);
