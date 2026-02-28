@@ -206,10 +206,15 @@ function App() {
         for (let i = 0; i < maxPollAttempts; i++) {
           await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
 
-          const taskResp = await fetch(`https://ai.gitee.com/api/v1/task/${taskId}`, {
+          const taskResp = await fetch('/api/task-status', {
+            method: 'POST',
             headers: {
-              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
             },
+            body: JSON.stringify({
+              task_id: taskId,
+              api_key: apiKey,
+            }),
           });
 
           if (!taskResp.ok) {
