@@ -45,9 +45,14 @@ export async function onRequestPost(context) {
       return jsonResponse(submitData || { error: '上游返回异常，缺少task_id' }, submitResponse.status || 500);
     }
 
+    // Cloudflare Pages Functions 有子请求数量限制，不能长轮询（会报 Too many subrequests）。
+    // 控制在较小次数，超时后让前端重试即可。
     let result = null;
-    for (let i = 0; i < 60; i++) {
-      await sleep(1500);
+    const maxPollAttempts = 20;
+    const pollDelayMs = 1500;
+
+    for (let i = 0; i < maxPollAttempts; i++) {
+      await sleep(pollDelayMs);
 
       const statusResponse = await fetch(`https://ai.gitee.com/api/v1/task/${submitData.task_id}`, {
         headers: {
@@ -69,7 +74,7 @@ export async function onRequestPost(context) {
     }
 
     if (!result) {
-      return jsonResponse({ error: '任务超时' }, 504);
+      return jsonResponse({ error: '任务处理中，请稍后重试（已避免子请求超限）' }, 504);
     }
 
     const imageCandidate =
