@@ -11,6 +11,7 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [numInferenceSteps, setNumInferenceSteps] = useState(8);
   const [guidanceScale, setGuidanceScale] = useState(8);
+  const [qualityPreset, setQualityPreset] = useState('quality');
   const [seed, setSeed] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -97,6 +98,18 @@ function App() {
       URL.revokeObjectURL(imgToRemove.url);
     }
     setImages(images.filter(img => img.id !== id));
+  };
+
+  const applyQualityPreset = (preset) => {
+    setQualityPreset(preset);
+    if (preset === 'fast') {
+      setNumInferenceSteps(5);
+      setGuidanceScale(5);
+      return;
+    }
+
+    setNumInferenceSteps(8);
+    setGuidanceScale(8);
   };
 
   const handleGenerate = async () => {
@@ -213,9 +226,9 @@ function App() {
         let lastTaskMessage = '';
         // 任务有时需要较长时间，轮询窗口拉长到约6分钟
         const maxPollAttempts = 180;
-        const pollDelayMs = 2000;
 
         for (let i = 0; i < maxPollAttempts; i++) {
+          const pollDelayMs = i < 10 ? 1000 : 2000;
           await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
 
           const taskStatusApiUrl = isNetlifyHost
@@ -567,6 +580,33 @@ function App() {
             </div>
 
             <div className="form-group">
+              <label className="form-label">生成模式</label>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{
+                    flex: 1,
+                    border: qualityPreset === 'fast' ? '1px solid var(--primary-color)' : undefined,
+                    background: qualityPreset === 'fast' ? 'rgba(99,102,241,0.08)' : undefined,
+                  }}
+                  onClick={() => applyQualityPreset('fast')}
+                >
+                  快速模式
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{
+                    flex: 1,
+                    border: qualityPreset === 'quality' ? '1px solid var(--primary-color)' : undefined,
+                    background: qualityPreset === 'quality' ? 'rgba(99,102,241,0.08)' : undefined,
+                  }}
+                  onClick={() => applyQualityPreset('quality')}
+                >
+                  质量模式
+                </button>
+              </div>
               <div className="slider-group">
                 <div className="slider-header">
                   <label className="form-label">推理步数（数值越大图像越清晰，但生成时间越长）</label>
@@ -576,7 +616,10 @@ function App() {
                   type="range" 
                   className="form-slider"
                   value={numInferenceSteps}
-                  onChange={(e) => setNumInferenceSteps(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    setQualityPreset('custom');
+                    setNumInferenceSteps(parseInt(e.target.value));
+                  }}
                   min="1"
                   max="20"
                   step="1"
@@ -594,7 +637,10 @@ function App() {
                   type="range" 
                   className="form-slider"
                   value={guidanceScale}
-                  onChange={(e) => setGuidanceScale(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    setQualityPreset('custom');
+                    setGuidanceScale(parseInt(e.target.value));
+                  }}
                   min="1"
                   max="10"
                   step="1"
