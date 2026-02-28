@@ -37,6 +37,7 @@ export async function onRequestPost(context) {
 
     const submitData = await safeJson(submitResponse);
 
+    // 上游少数情况会直接回图
     if (submitData?.output?.image) {
       return proxyImageResult(submitData.output.image);
     }
@@ -45,78 +46,43 @@ export async function onRequestPost(context) {
       return jsonResponse(submitData || { error: '上游返回异常，缺少task_id' }, submitResponse.status || 500);
     }
 
-    // Cloudflare Pages Functions 有子请求数量限制，不能长轮询（会报 Too many subrequests）。
-    // 控制在较小次数，超时后让前端重试即可。
-    let result = null;
-    const maxPollAttempts = 20;
-    const pollDelayMs = 1500;
-
-    for (let i = 0; i < maxPollAttempts; i++) {
-      await sleep(pollDelayMs);
-
-      const statusResponse = await fetch(`https://ai.gitee.com/api/v1/task/${submitData.task_id}`, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      });
-
-      const statusData = await safeJson(statusResponse);
-      const status = statusData?.status || statusData?.task_status || statusData?.state;
-
-      if (['succeeded', 'SUCCEEDED', 'completed', 'success'].includes(status)) {
-        result = statusData?.output || statusData?.data || statusData?.result || statusData?.image;
-        break;
-      }
-
-      if (['failed', 'FAILED', 'error'].includes(status)) {
-        return jsonResponse({ error: statusData?.error || statusData?.message || '任务失败' }, 500);
-      }
-    }
-
-    if (!result) {
-      return jsonResponse({ error: '任务处理中，请稍后重试（已避免子请求超限）' }, 504);
-    }
-
-    const imageCandidate =
-      typeof result === 'string'
-        ? result
-        : result?.image || result?.file_url || result?.url || result?.data;
-
-    if (!imageCandidate) {
-      return jsonResponse({ error: '无法解析返回结果', raw: result }, 500);
-    }
-
-    if (typeof imageCandidate === 'string' && imageCandidate.startsWith('http')) {
-      return proxyImageResult(imageCandidate);
-    }
-
-    if (typeof imageCandidate === 'string') {
-      const binary = atob(stripDataUrlPrefix(imageCandidate));
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return new Response(bytes, {
-        status: 200,
-        headers: {
-          'Content-Type': 'image/png',
-          ...corsHeaders(),
-        },
-      });
-    }
-
-    return jsonResponse({ error: '结果格式不支持', raw: result }, 500);
+    // 改为前端轮询，避免单次请求子请求超限
+    return jsonResponse({
+      status: 'processing',
+      task_id: submitData.task_id,
+      message: '任务已提交，前端轮询中',
+    }, 202);
   } catch (error) {
     return jsonResponse({ error: error?.message || 'Pages Function 处理失败' }, 500);
   }
 }
 
 async function proxyImageResult(imageUrl) {
-  const imageResponse = await fetch(imageUrl);
-  return new Response(imageResponse.body, {
-    status: imageResponse.status,
+  if (typeof imageUrl !== 'string') {
+    return jsonResponse({ error: '图片结果格式异常' }, 500);
+  }
+
+  if (imageUrl.startsWith('http')) {
+    const imageResponse = await fetch(imageUrl);
+    return new Response(imageResponse.body, {
+      status: imageResponse.status,
+      headers: {
+        'Content-Type': imageResponse.headers.get('Content-Type') || 'image/png',
+        ...corsHeaders(),
+      },
+    });
+  }
+
+  const binary = atob(stripDataUrlPrefix(imageUrl));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new Response(bytes, {
+    status: 200,
     headers: {
-      'Content-Type': imageResponse.headers.get('Content-Type') || 'image/png',
+      'Content-Type': 'image/png',
       ...corsHeaders(),
     },
   });
@@ -126,10 +92,6 @@ function stripDataUrlPrefix(base64String) {
   const marker = 'base64,';
   const idx = base64String.indexOf(marker);
   return idx >= 0 ? base64String.slice(idx + marker.length) : base64String;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function safeJson(response) {

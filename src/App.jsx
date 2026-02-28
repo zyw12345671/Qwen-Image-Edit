@@ -191,6 +191,113 @@ function App() {
         throw new Error(`网络连接失败：${lastFetchError?.message || '无法连接到图片生成服务'}。`);
       }
 
+      // 202: 后端已接单，前端轮询任务结果（避免 Pages Functions 子请求超限）
+      if (response.status === 202) {
+        const accepted = await response.json();
+        const taskId = accepted?.task_id;
+        if (!taskId) {
+          throw new Error('任务已提交但缺少 task_id');
+        }
+
+        let imageUrl = null;
+        const maxPollAttempts = 60;
+        const pollDelayMs = 1500;
+
+        for (let i = 0; i < maxPollAttempts; i++) {
+          await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
+
+          const taskResp = await fetch(`https://ai.gitee.com/api/v1/task/${taskId}`, {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+            },
+          });
+
+          if (!taskResp.ok) {
+            continue;
+          }
+
+          const taskData = await taskResp.json();
+          const status = taskData?.status || taskData?.task_status || taskData?.state;
+
+          if (['succeeded', 'SUCCEEDED', 'completed', 'success'].includes(status)) {
+            const result = taskData?.output || taskData?.data || taskData?.result || taskData?.image;
+            const imageCandidate =
+              typeof result === 'string'
+                ? result
+                : result?.image || result?.file_url || result?.url || result?.data;
+
+            if (!imageCandidate) {
+              throw new Error('任务完成但无图片结果');
+            }
+
+            if (typeof imageCandidate === 'string' && imageCandidate.startsWith('http')) {
+              imageUrl = imageCandidate;
+              break;
+            }
+
+            if (typeof imageCandidate === 'string') {
+              // base64 兜底
+              const binary = atob(imageCandidate.includes('base64,') ? imageCandidate.split('base64,')[1] : imageCandidate);
+              const bytes = new Uint8Array(binary.length);
+              for (let j = 0; j < binary.length; j++) {
+                bytes[j] = binary.charCodeAt(j);
+              }
+              const base64Blob = new Blob([bytes], { type: 'image/png' });
+              const base64Url = URL.createObjectURL(base64Blob);
+              setResult(base64Url);
+              return;
+            }
+          }
+
+          if (['failed', 'FAILED', 'error'].includes(status)) {
+            throw new Error(taskData?.error || taskData?.message || '任务执行失败');
+          }
+        }
+
+        if (!imageUrl) {
+          throw new Error('任务处理中超时，请稍后再试');
+        }
+
+        const imageResponse = await fetch(imageUrl);
+        if (!imageResponse.ok) {
+          throw new Error(`拉取结果图失败（HTTP ${imageResponse.status}）`);
+        }
+
+        const blob = await imageResponse.blob();
+        const url = URL.createObjectURL(blob);
+        setResult(url);
+
+        const now = new Date();
+        const timestamp = now.getFullYear() + 
+          String(now.getMonth() + 1).padStart(2, '0') + 
+          String(now.getDate()).padStart(2, '0') + 
+          String(now.getHours()).padStart(2, '0') + 
+          String(now.getMinutes()).padStart(2, '0') + 
+          String(now.getSeconds()).padStart(2, '0');
+        const dateStr = now.toLocaleString('zh-CN');
+
+        const newRecord = {
+          id: Date.now(),
+          image: url,
+          prompt: prompt,
+          seed: seed || '随机',
+          timestamp: timestamp,
+          date: dateStr,
+          numInferenceSteps: numInferenceSteps,
+          guidanceScale: guidanceScale
+        };
+
+        saveImageToDB(newRecord).then(savedRecord => {
+          const recordToAdd = {
+            ...newRecord,
+            image: savedRecord.imageData
+          };
+          setGalleryHistory([recordToAdd, ...galleryHistory]);
+        }).catch(err => console.error('Failed to save image:', err));
+
+        return;
+      }
+
       if (!response.ok) {
         let errorMessage = `生成图像失败（HTTP ${response.status}）`;
         try {
